@@ -55,7 +55,7 @@ $today = date('Y-m-d');
                 <h2 class="section-title">Görevler</h2>
 
                 <!-- Add Todo Form -->
-                <form action="add.php" method="POST" class="add-todo-form">
+                <form id="addTodoForm" class="add-todo-form">
                     <div class="form-row">
                         <div class="form-group">
                             <label for="task">Görev</label>
@@ -178,7 +178,7 @@ $today = date('Y-m-d');
     <div id="editModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
         <div style="background: white; border-radius: 8px; padding: 24px; width: 90%; max-width: 500px;">
             <h3 style="margin-bottom: 20px; color: var(--primary);">Görevi Düzenle</h3>
-            <form action="edit.php" method="POST">
+            <form id="editTodoForm">
                 <input type="hidden" id="editId" name="id">
                 <div style="margin-bottom: 16px;">
                     <label style="display: block; margin-bottom: 8px; font-weight: 500;">Görev</label>
@@ -211,7 +211,18 @@ $today = date('Y-m-d');
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: 'id=' + id
-            }).then(() => location.reload());
+            }).then(response => {
+                if (response.ok) {
+                    // Find the specific todo item by the complete button's onclick
+                    const completeBtn = document.querySelector(`[onclick="toggleComplete(${id})"]`);
+                    if (completeBtn) {
+                        const todoItem = completeBtn.closest('.todo-item');
+                        todoItem.classList.toggle('completed');
+                        const icon = completeBtn.querySelector('i');
+                        icon.className = todoItem.classList.contains('completed') ? 'fas fa-check' : 'far fa-circle';
+                    }
+                }
+            });
         }
 
         function deleteTodo(id) {
@@ -220,7 +231,18 @@ $today = date('Y-m-d');
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: 'id=' + id
-                }).then(() => location.reload());
+                }).then(response => {
+                    if (response.ok) {
+                        // Find the specific todo item by the delete button's onclick
+                        const deleteBtn = document.querySelector(`[onclick="deleteTodo(${id})"]`);
+                        if (deleteBtn) {
+                            const todoItem = deleteBtn.closest('.todo-item');
+                            todoItem.style.opacity = '0';
+                            todoItem.style.transform = 'translateX(-100%)';
+                            setTimeout(() => todoItem.remove(), 300);
+                        }
+                    }
+                });
             }
         }
 
@@ -234,6 +256,28 @@ $today = date('Y-m-d');
 
         function closeEditModal() {
             document.getElementById('editModal').style.display = 'none';
+        }
+
+        // Edit todo form handler
+        function editTodoSubmit(event) {
+            event.preventDefault();
+            
+            const formData = new FormData(event.target);
+            
+            fetch('edit.php', {
+                method: 'POST',
+                body: formData
+            }).then(response => {
+                if (response.ok) {
+                    closeEditModal();
+                    
+                    // Show success message (optional reload after short delay)
+                    setTimeout(() => location.reload(), 500);
+                }
+            }).catch(error => {
+                console.error('Error:', error);
+                alert('Görev güncellenirken bir hata oluştu');
+            });
         }
 
         // Countdown updates
@@ -268,15 +312,36 @@ $today = date('Y-m-d');
             });
         }
 
-        // Pomodoro Timer
-        let timer = {
-            isRunning: false,
-            timeLeft: 25 * 60,
-            totalTime: 25 * 60,
-            completedPomodoros: localStorage.getItem('completedPomodoros') || 0,
-            totalFocusTime: localStorage.getItem('totalFocusTime') || 0
-        };
+        // Pomodoro Timer with localStorage persistence
+        function loadTimerState() {
+            const saved = localStorage.getItem('timerState');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                return {
+                    isRunning: false, // Always start as paused after reload
+                    timeLeft: parsed.timeLeft || 25 * 60,
+                    totalTime: parsed.totalTime || 25 * 60,
+                    completedPomodoros: parseInt(localStorage.getItem('completedPomodoros')) || 0,
+                    totalFocusTime: parseInt(localStorage.getItem('totalFocusTime')) || 0
+                };
+            }
+            return {
+                isRunning: false,
+                timeLeft: 25 * 60,
+                totalTime: 25 * 60,
+                completedPomodoros: parseInt(localStorage.getItem('completedPomodoros')) || 0,
+                totalFocusTime: parseInt(localStorage.getItem('totalFocusTime')) || 0
+            };
+        }
 
+        function saveTimerState() {
+            localStorage.setItem('timerState', JSON.stringify({
+                timeLeft: timer.timeLeft,
+                totalTime: timer.totalTime
+            }));
+        }
+
+        let timer = loadTimerState();
         let timerInterval;
 
         function startTimer() {
@@ -288,6 +353,7 @@ $today = date('Y-m-d');
             
             timerInterval = setInterval(() => {
                 timer.timeLeft--;
+                saveTimerState(); // Save state every second
                 updateTimerDisplay();
                 
                 if (timer.timeLeft <= 0) {
@@ -299,6 +365,7 @@ $today = date('Y-m-d');
         function pauseTimer() {
             timer.isRunning = false;
             clearInterval(timerInterval);
+            saveTimerState(); // Save state when pausing
             document.getElementById('startBtn').style.display = 'inline-block';
             document.getElementById('pauseBtn').style.display = 'none';
         }
@@ -306,6 +373,7 @@ $today = date('Y-m-d');
         function resetTimer() {
             pauseTimer();
             timer.timeLeft = timer.totalTime;
+            saveTimerState(); // Save state when resetting
             updateTimerDisplay();
         }
 
@@ -317,8 +385,13 @@ $today = date('Y-m-d');
             localStorage.setItem('completedPomodoros', timer.completedPomodoros);
             localStorage.setItem('totalFocusTime', timer.totalFocusTime);
             
+            // Reset timer to 25 minutes for next session
+            timer.timeLeft = 25 * 60;
+            timer.totalTime = 25 * 60;
+            saveTimerState();
+            
             updateStats();
-            resetTimer();
+            updateTimerDisplay();
             
             alert('Pomodoro tamamlandı! 🎉');
         }
@@ -345,12 +418,60 @@ $today = date('Y-m-d');
             document.getElementById('totalFocusTime').textContent = timer.totalFocusTime;
         }
 
+        // Add todo form handler
+        function addTodo(event) {
+            event.preventDefault();
+            
+            const formData = new FormData(event.target);
+            
+            fetch('add.php', {
+                method: 'POST',
+                body: formData
+            }).then(response => {
+                if (response.ok) {
+                    // Clear form
+                    event.target.reset();
+                    
+                    // Set default datetime again
+                    const input = document.getElementById('due_date');
+                    if (input) {
+                        const now = new Date();
+                        now.setHours(now.getHours() + 1);
+                        input.value = now.toISOString().slice(0, 16);
+                    }
+                    
+                    // Show success message
+                    const btn = event.target.querySelector('button[type="submit"]');
+                    const originalText = btn.innerHTML;
+                    btn.innerHTML = '<i class="fas fa-check"></i> Eklendi!';
+                    btn.style.background = 'var(--success)';
+                    
+                    setTimeout(() => {
+                        btn.innerHTML = originalText;
+                        btn.style.background = '';
+                    }, 2000);
+                    
+                    // Optionally reload to show new todo (or implement dynamic addition)
+                    setTimeout(() => location.reload(), 1000);
+                }
+            }).catch(error => {
+                console.error('Error:', error);
+                alert('Görev eklenirken bir hata oluştu');
+            });
+        }
+
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
+            // Load timer state and update display
+            timer = loadTimerState();
             updateTimerDisplay();
             updateStats();
             updateCountdowns();
-            setInterval(updateCountdowns, 60000);
+            setInterval(updateCountdowns, 60000); // Update every minute
+            
+            // Show correct button state (always show start button after reload)
+            document.getElementById('startBtn').style.display = 'inline-block';
+            document.getElementById('pauseBtn').style.display = 'none';
             
             // Set default datetime
             const input = document.getElementById('due_date');
@@ -359,6 +480,10 @@ $today = date('Y-m-d');
                 now.setHours(now.getHours() + 1);
                 input.value = now.toISOString().slice(0, 16);
             }
+            
+            // Add form submit handlers
+            document.getElementById('addTodoForm').addEventListener('submit', addTodo);
+            document.getElementById('editTodoForm').addEventListener('submit', editTodoSubmit);
         });
 
         // Modal close on outside click

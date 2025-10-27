@@ -196,7 +196,7 @@ body {
     border-radius: var(--radius);
     padding: 20px;
     margin-bottom: 16px;
-    transition: all 0.2s;
+    transition: all 0.3s ease, opacity 0.3s ease, transform 0.3s ease;
 }
 
 .todo-item:hover {
